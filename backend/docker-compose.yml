@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  # 1. FastAPI Backend API Gateway
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://somigo_user:somigo_secure_pass@db:5432/somigo_db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - SECRET_KEY=${SECRET_KEY:-somigo_super_secret_jwt_key_2026_change_in_prod}
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - somigo-net
+
+  # 2. PostgreSQL Database (Local or Supabase Compatible)
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=somigo_user
+      - POSTGRES_PASSWORD=somigo_secure_pass
+      - POSTGRES_DB=somigo_db
+    ports:
+      - "127.0.0.1:5432:5432" # Bound strictly to localhost/internal for security
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../supabase/migrations/20261003_001_somigo_production.sql:/docker-entrypoint-initdb.d/01_init_schema.sql:ro
+      - ../supabase/migrations/20261003_002_somigo_dev_seed.sql:/docker-entrypoint-initdb.d/02_seed_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U somigo_user -d somigo_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - somigo-net
+
+  # 3. Redis Cache & Live Location Broker
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - somigo-net
+
+networks:
+  somigo-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
